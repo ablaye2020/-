@@ -1,0 +1,317 @@
+// ============================================
+// JOY-MD-V2 - FICHIER DE DÉPLOIEMENT PANEL
+// ============================================
+
+const { spawnSync, spawn } = require('child_process');
+const { existsSync, mkdirSync, writeFileSync, readFileSync } = require('fs');
+const path = require('path');
+
+// ========== CONFIGURATION PANEL ==========
+const PROJECT_NAME = 'joy-md-v2';
+const PROJECT_REPO = 'https://github.com/Ainz-devs/JOY-MD-V2';
+const MAIN_FILE = 'Joy.js';
+const PM2_NAME = 'joy-md';
+
+// ========== VARIABLES D'ENVIRONNEMENT À REMPLIR ==========
+// ⚠️ REMPLIS CES INFOS AVANT DE LANCER ⚠️
+const env_file = `
+# JOY-MD-V2 Configuration Panel
+PREFIXE=!
+NOM_OWNER=Joyboy
+NUMERO_OWNER=226000000000
+MODE=public
+SESSION_ID=
+STICKER_PACK_NAME=☀️ギア5🍜
+STICKER_AUTHOR_NAME=Joyboy😁
+NOM_BOT=🍜 JOY-MD | ÉVEIL DU SOLEIL ☀️
+`;
+
+// ========== VÉRIFICATION ==========
+if (!env_file.trim()) {
+  console.error("❌ 'env_file' est vide. Veuillez renseigner vos variables d'environnement avant de lancer le script.");
+  process.exit(1);
+}
+
+// ========== CONFIGURATION CRASH ==========
+let crashCount = 0;
+const crashLimit = 5;
+let lastCrashTime = Date.now();
+const crashResetDelay = 30000;
+
+// ========== COULEURS CONSOLE ==========
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  cyan: '\x1b[36m',
+  magenta: '\x1b[35m'
+};
+
+function log(message, type = 'info') {
+  const emojis = {
+    info: '📝',
+    success: '✅',
+    error: '❌',
+    warning: '⚠️',
+    joy: '😁',
+    sun: '☀️'
+  };
+  const timestamp = new Date().toLocaleTimeString();
+  console.log(`${emojis[type] || '📝'} [${timestamp}] ${message}`);
+}
+
+// ========== BANNIÈRE JOYBOY ==========
+console.log(`
+${colors.yellow}╔══════════════════════════════════════════════════════════════╗${colors.reset}
+${colors.yellow}║${colors.reset}                                                              ${colors.yellow}║${colors.reset}
+${colors.yellow}║${colors.reset}     ${colors.cyan}☀️ JOY-MD-V2 - DÉPLOIEMENT PANEL ☀️${colors.reset}                         ${colors.yellow}║${colors.reset}
+${colors.yellow}║${colors.reset}     ${colors.green}Le bot WhatsApp Gear 5 de Joyboy${colors.reset}                           ${colors.yellow}║${colors.reset}
+${colors.yellow}║${colors.reset}                                                              ${colors.yellow}║${colors.reset}
+${colors.yellow}╚══════════════════════════════════════════════════════════════╝${colors.reset}
+`);
+
+// ========== ÉTAPE 1 : CLONAGE DU PROJET ==========
+function setupProject() {
+  log("Démarrage de l'installation...", "info");
+  
+  if (!existsSync(PROJECT_NAME)) {
+    log(`Clonage du dépôt: ${PROJECT_REPO}`, "info");
+    const clone = spawnSync('git', ['clone', PROJECT_REPO, PROJECT_NAME], { 
+      stdio: 'inherit',
+      encoding: 'utf-8'
+    });
+    
+    if (clone.status !== 0) {
+      log("Erreur lors du clonage du dépôt", "error");
+      process.exit(1);
+    }
+    log("Dépôt cloné avec succès", "success");
+  } else {
+    log("Dossier du projet déjà existant", "info");
+  }
+
+  // Création du fichier .env
+  const envPath = path.join(PROJECT_NAME, '.env');
+  if (!existsSync(envPath)) {
+    mkdirSync(PROJECT_NAME, { recursive: true });
+    writeFileSync(envPath, env_file.trim());
+    log("✅ Fichier .env créé avec succès", "success");
+  } else {
+    log("Fichier .env déjà existant", "info");
+  }
+
+  // Installation des dépendances
+  log("Installation des dépendances NPM...", "info");
+  const install = spawnSync('npm', ['install'], { 
+    cwd: PROJECT_NAME, 
+    stdio: 'inherit',
+    encoding: 'utf-8'
+  });
+  
+  if (install.status !== 0) {
+    log("Erreur lors de l'installation des dépendances", "error");
+    process.exit(1);
+  }
+  log("Dépendances installées avec succès", "success");
+}
+
+// ========== ÉTAPE 2 : VALIDATION ==========
+function validateSetup() {
+  const packagePath = path.join(PROJECT_NAME, 'package.json');
+  if (!existsSync(packagePath)) {
+    log("package.json introuvable", "error");
+    process.exit(1);
+  }
+
+  const mainFilePath = path.join(PROJECT_NAME, MAIN_FILE);
+  if (!existsSync(mainFilePath)) {
+    log(`Fichier principal ${MAIN_FILE} introuvable`, "error");
+    process.exit(1);
+  }
+
+  // Vérification des modules
+  const check = spawnSync('npm', ['ls', '--depth=0'], { 
+    cwd: PROJECT_NAME, 
+    stdio: 'ignore',
+    encoding: 'utf-8'
+  });
+
+  if (check.status !== 0) {
+    log("Modules manquants, réinstallation...", "warning");
+    const reinstall = spawnSync('npm', ['install'], { 
+      cwd: PROJECT_NAME, 
+      stdio: 'inherit',
+      encoding: 'utf-8'
+    });
+    if (reinstall.status !== 0) {
+      log("Échec de la réinstallation", "error");
+      process.exit(1);
+    }
+  }
+  
+  log("Validation du projet réussie", "success");
+}
+
+// ========== ÉTAPE 3 : LANCEMENT AVEC PM2 ==========
+function launchApp() {
+  log("☀️ Lancement de JOY-MD-V2...", "sun");
+  
+  // Vérifier si PM2 est installé globalement
+  const pm2Check = spawnSync('npx', ['pm2', '-v'], { 
+    cwd: PROJECT_NAME, 
+    stdio: 'pipe',
+    encoding: 'utf-8'
+  });
+  
+  if (pm2Check.status !== 0) {
+    log("Installation de PM2...", "info");
+    spawnSync('npm', ['install', '-g', 'pm2'], { stdio: 'inherit' });
+  }
+
+  const pm2 = spawn('npx', ['pm2', 'start', MAIN_FILE, '--name', PM2_NAME, '--attach'], {
+    cwd: PROJECT_NAME,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  let restartAttempts = 0;
+
+  pm2.stdout?.on('data', (chunk) => {
+    const output = chunk.toString();
+    console.log(output);
+    
+    if (output.includes('Connexion') || output.includes('connected') || output.includes('ready')) {
+      restartAttempts = 0;
+      log("Bot connecté avec succès ! 😁", "joy");
+    }
+    
+    if (output.includes('Gear 5') || output.includes('DRUM OF LIBERATION')) {
+      log("Mode Gear 5 détecté ! ☀️", "sun");
+    }
+  });
+
+  pm2.stderr?.on('data', (chunk) => {
+    const output = chunk.toString();
+    console.error(output);
+    
+    if (output.includes('restart') || output.includes('crash')) {
+      restartAttempts++;
+      log(`Tentative de redémarrage ${restartAttempts}/3`, "warning");
+      
+      if (restartAttempts > 3) {
+        log("Trop de redémarrages, passage en mode fallback", "warning");
+        spawnSync('npx', ['pm2', 'delete', PM2_NAME], { 
+          cwd: PROJECT_NAME, 
+          stdio: 'inherit' 
+        });
+        startNodeFallback();
+      }
+    }
+  });
+
+  pm2.on('exit', (code) => {
+    log(`Processus PM2 terminé avec le code: ${code}`, "warning");
+    startNodeFallback();
+  });
+
+  pm2.on('error', (err) => {
+    log(`Erreur PM2: ${err.message}`, "error");
+    startNodeFallback();
+  });
+}
+
+// ========== MODE FALLBACK (sans PM2) ==========
+function startNodeFallback() {
+  log("Lancement en mode fallback (Node.js direct)...", "info");
+  
+  const child = spawn('node', [MAIN_FILE], { 
+    cwd: PROJECT_NAME, 
+    stdio: 'inherit' 
+  });
+
+  child.on('exit', (code) => {
+    const now = Date.now();
+    
+    // Réinitialiser le compteur après un délai
+    if (now - lastCrashTime > crashResetDelay) {
+      crashCount = 0;
+    }
+    
+    crashCount++;
+    lastCrashTime = now;
+    
+    log(`Crash #${crashCount}/${crashLimit}`, "error");
+
+    if (crashCount > crashLimit) {
+      log("Limite de crashes atteinte. Arrêt du bot.", "error");
+      log("Veuillez vérifier votre configuration ou votre session ID", "warning");
+      process.exit(1);
+    }
+
+    log("Redémarrage dans 5 secondes...", "warning");
+    setTimeout(() => startNodeFallback(), 5000);
+  });
+
+  child.on('error', (err) => {
+    log(`Erreur Node: ${err.message}`, "error");
+  });
+}
+
+// ========== SURVEILLANCE DES FICHIERS (optionnel) ==========
+function watchProject() {
+  if (process.env.WATCH_MODE === 'true') {
+    const watch = spawn('npx', ['nodemon', '--watch', PROJECT_NAME, '--exec', `node ${MAIN_FILE}`], {
+      cwd: PROJECT_NAME,
+      stdio: 'inherit'
+    });
+    
+    watch.on('exit', () => {
+      log("Mode watch arrêté", "warning");
+    });
+  }
+}
+
+// ========== LANCEMENT PRINCIPAL ==========
+async function main() {
+  try {
+    setupProject();
+    validateSetup();
+    
+    // Choix de la méthode de lancement
+    const usePM2 = process.env.USE_PM2 !== 'false';
+    
+    if (usePM2) {
+      launchApp();
+    } else {
+      startNodeFallback();
+    }
+    
+    // Mode watch si activé
+    if (process.env.WATCH_MODE === 'true') {
+      watchProject();
+    }
+    
+  } catch (error) {
+    log(`Erreur fatale: ${error.message}`, "error");
+    process.exit(1);
+  }
+}
+
+// ========== GESTION DES SIGNAUX ==========
+process.on('SIGINT', () => {
+  log("\n🌙 Arrêt du bot demandé...", "warning");
+  log("Le Soleil se couche... pour mieux se lever demain ! ☀️", "joy");
+  
+  // Nettoyage
+  spawnSync('npx', ['pm2', 'delete', PM2_NAME], { stdio: 'ignore' });
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  log("\nArrêt forcé du bot", "warning");
+  process.exit(0);
+});
+
+// ========== DÉMARRAGE ==========
+main();
